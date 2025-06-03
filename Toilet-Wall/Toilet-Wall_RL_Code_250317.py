@@ -735,9 +735,6 @@ if __name__ == "__main__":
                 policy_kwargs = dict(
                     net_arch=dict(pi=[128, 64], vf=[128, 64])
                 ))
-    # for continue the training
-    # previous_model_path = "./databank/eval/best_model.zip"
-    # model = PPO.load(previous_model_path, env=env)
     model.learn(total_timesteps=32768, callback=callback, progress_bar=True)
     model.save(save_path + "final_model/")
     env.close()
@@ -745,7 +742,5 @@ if __name__ == "__main__":
     # #train with DQN
     # model = DQN("MlpPolicy", env, batch_size=128,buffer_size=2048,gamma=0.99,learning_starts=128,learning_rate=0.00063,target_update_interval=64,train_freq=4,gradient_steps=-1,exploration_fraction=0.5, exploration_final_eps=0.1,verbose=1, tensorboard_log=save_path + "dqn_tensorboard/", device="auto")
     # model.learn(total_timesteps=16384, callback=callback, progress_bar=True)
-    # # for continue the training
-    # # model = DQN.load(previous_model_path, env=env)
     # model.save(save_path + "final_model/")
     # env.close()
