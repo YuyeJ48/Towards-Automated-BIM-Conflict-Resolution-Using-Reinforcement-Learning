@@ -6,6 +6,10 @@ import shutil
 import numpy as np
 import requests
 import pandas as pd
+import requests
+import subprocess
+import socket
+import json
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -91,7 +95,7 @@ class GymEnv_IFC_Column(gym.Env):
         self.column_matrix = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
         self.window_matrix = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
         self.steps = 0
-        self.destination_path = 'H:\\Model\\Column-Window_AC20-FZK-Haus.ifc'
+        self.destination_path = 'S:\\YuyeJiang\\Solibri\\Model\\Column-Window_AC20-FZK-Haus.ifc'
         self.index_conflict = 0
         self.conflicts_origin = 0
         self.created_conf_origin = 0
@@ -105,11 +109,12 @@ class GymEnv_IFC_Column(gym.Env):
         self.column = ifcopenshell.entity_instance
 
     def reset(self, seed=None): # reset the env for each episode
+        print(f"Reset called with seed: {seed}")
         super().reset(seed=seed)
         self.steps = 0
         # copy an ifc model from the original file
-        source_path = 'H:\\Model\\Column-Window_AC20-FZK-Haus.ifc'
-        self.destination_path = 'H:\\Model\\Column-Window_AC20-FZK-Haus_train.ifc'
+        source_path = 'S:\\YuyeJiang\\Solibri\\Model\\Column-Window_AC20-FZK-Haus.ifc'
+        self.destination_path = 'S:\\YuyeJiang\\Solibri\\Model\\Column-Window_AC20-FZK-Haus_train.ifc'
         shutil.copy(source_path, self.destination_path)
         self.model = ifcopenshell.open(self.destination_path)
         # reset the column in different location using IfcOpenShell
@@ -122,7 +127,7 @@ class GymEnv_IFC_Column(gym.Env):
         column_matrix[1][3] = y
         usecase = ifcopenshell.api.geometry.edit_object_placement.Usecase(file=self.model, product=column, matrix=column_matrix)
         usecase.execute()
-        self.model.write()
+        self.model.write(self.destination_path)
         # update the ifc model in solibri using RestAPI
         self._update()
         # check the model using solibri RestAPI
@@ -158,6 +163,7 @@ class GymEnv_IFC_Column(gym.Env):
         self._update()
         self._check()
         self.conflicts, self.created_conf, _ = self._current_results()
+        # print("index is:", self.index_conflict)
         self.severity = self._get_information(self.index_conflict)
         """define the rewards:
         resolve a targeted conflict +1
@@ -166,7 +172,7 @@ class GymEnv_IFC_Column(gym.Env):
         reward = 0
         terminated = False
         truncated =False
-        if self.steps < 30: # limit the length of one episode, so it won't last forever
+        if self.steps < 50: # limit the length of one episode, so it won't last forever
             if self.conflicts == self.conflicts_origin:
                 if self.conflicts != 0 and self.severity < self.severity_origin:
                     reward += 0.2
@@ -188,11 +194,15 @@ class GymEnv_IFC_Column(gym.Env):
                     self.created_severity_origin = self.created_severity
             elif self.conflicts < self.conflicts_origin:
                 reward += 1
-                if self.conflicts != 0:
-                    self.index_conflict += 1
-                    self.severity = self._get_information(self.index_conflict)
-                else:
+                if self.conflicts == 0:
+                    reward += 1
                     terminated = True
+                    truncated = True
+                    observation = self._get_obs()
+                    info = self._get_info()
+                    return observation, reward, terminated, truncated, info
+            
+                self.severity = self._get_information(self.index_conflict)
                 self.conflicts_origin = self.conflicts
                 if self.created_conf > self.created_conf_origin:
                     reward -= 1
@@ -289,12 +299,12 @@ class GymEnv_IFC_Column(gym.Env):
 
     def _update(self):
         """to get the uuid of the model:
-        solibri_server_url = 'http://localhost:10876/solibri/v1'
+        solibri_server_url = 'http://localhost:8080/solibri/v1'
         url = f'{solibri_server_url}/models'
         response = requests.get(url, headers={'accept': 'application/json'})
         response_body = response.json()"""
-        modelUUID = "1ba10e33-68f8-4a56-acee-ea6681a59f07"
-        solibri_server_url = 'http://localhost:10876/solibri/v1'
+        modelUUID = "71f210b7-683b-4ead-aae3-413313687d67"
+        solibri_server_url = 'http://localhost:8080/solibri/v1'
         url = f'{solibri_server_url}/models/{modelUUID}/update'
         headers = {'Content-Type': 'application/octet-stream'}
         with open(self.destination_path, 'rb') as ifc_file:
@@ -305,7 +315,7 @@ class GymEnv_IFC_Column(gym.Env):
             sys.exit(f'Failed to update IFC model with status code: {response.status_code}')
 
     def _check(self):
-        solibri_server_url = 'http://localhost:10876/solibri/v1'
+        solibri_server_url = 'http://localhost:8080/solibri/v1'
         url = f'{solibri_server_url}/checking?checkSelected=false'
         response = requests.post(url, headers={'accept': 'application/json'}, data='')
         if response.status_code != 200:
@@ -370,13 +380,14 @@ class GymEnv_IFC_Column(gym.Env):
 
     def _current_results(self): # analyse the CSV file
         # this CSV file_path is determined by the Solibri Java API
-        file_path = 'H:/Checking_results/checking_results.csv'
+        file_path = 'S:/YuyeJiang/Solibri/CheckingResults/checking_results.csv'
         max_retries = 3
         retry_delay = 1
         retry_count = 0
         while retry_count < max_retries:
             try:
                 checking_results = pd.read_csv(file_path)
+                print("checking results:", checking_results)
                 break
             except pd.errors.EmptyDataError:
                 time.sleep(retry_delay)
@@ -394,22 +405,22 @@ class GymEnv_IFC_Column(gym.Env):
         self.created_severity_list = other_severity.tolist()
         return conflicts_number, other_conflicts, filtered_checking_results
 
-# for testing the env
-env = GymEnv_IFC_Column()
-check_env(env, warn=True, skip_render_check=True)
-observation, info = env.reset()
-for _ in range(10):
-    action = env.action_space.sample()
-    observation, reward, terminated, truncated, info = env.step(action)
-    print("action:", action)
-    print("observation:", observation)
-    print("reward:", reward)
-    print("terminated:", terminated)
-    print("truncated:", truncated)
-    print("info:", info)
-    if terminated or truncated:
-        observation, info = env.reset()
-env.close()
+# # for testing the env
+# env = GymEnv_IFC_Column()
+# check_env(env, warn=True, skip_render_check=True)
+# observation, info = env.reset()
+# for _ in range(10):
+#     action = env.action_space.sample()
+#     observation, reward, terminated, truncated, info = env.step(action)
+#     print("action:", action)
+#     print("observation:", observation)
+#     print("reward:", reward)
+#     print("terminated:", terminated)
+#     print("truncated:", truncated)
+#     print("info:", info)
+#     if terminated or truncated:
+#         observation, info = env.reset()
+# env.close()
 
 # for new training
 env = GymEnv_IFC_Column()
@@ -420,6 +431,8 @@ class CustomCallback(BaseCallback):
         self.episode_idx = 0
         self.current_episode = []
         self.save_path = save_path
+        self.steps = 0 #count the steps, restart Solibri after 512 time steps, but wait to the end of the episode
+        self.need_restart = False
     def _on_step(self) -> bool:
         # log the information i need
         action = self.locals.get("actions", None)
@@ -435,6 +448,11 @@ class CustomCallback(BaseCallback):
             observation = np.nan_to_num(observation, nan=0.0)
             return True
         self.current_episode.append((observation, action, reward, done))
+
+        self.steps += 1
+        if self.steps >= 256:
+            self.need_restart = True
+
         # store the csv data when one episode is finished
         if done[0]:
             custom_dir = os.path.join(self.save_path, "custom/")
@@ -451,40 +469,97 @@ class CustomCallback(BaseCallback):
                     writer.writerow([self.episode_idx, step_idx, obs, a, r, d])
             self.episode_idx += 1
             self.current_episode = []  # reset for the next episode
+
+            if self.need_restart:
+                self.restart_solibri()
+                self.need_restart = False
+                self.steps = 0
+
         return True
+    
+    def restart_solibri(self): #restart Solibri
+        print("Attempting to shut down Solibri...")
+
+        try:
+            response = requests.post('http://localhost:10876/solibri/v1/shutdown', params={"force": "true"})
+            if response.status_code == 200:
+                print("Solibri has been successfully shut down.")
+            else:
+                print(f"Failed to shut down Solibri. Status code: {response.status_code}, response: {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error shutting down Solibri: {e}")
+
+        time.sleep(30)
+
+        # reopen Solibri
+        print("Restarting Solibri...")
+        port_list = [10876, 8080, 8081, 8090, 8100, 8200, 8300, 8500, 8600, 8700, 8800, 8888, 8900, 9000, 9090, 10000]
+
+        for port in port_list:
+            command = [
+                r"C:\Program Files\Solibri\SOLIBRI\Solibri.exe",
+                f"--rest-api-server-port={port}",
+                "--rest-api-server-local-content",
+                "--rest-api-server-http"
+            ]
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            print("Solibri has been restarted.")
+
+            time.sleep(30)
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("localhost", port)) == 0:
+                    print(f"Solibri is successfully running on the port {port}.")
+                    break
+                else:
+                    print(f"Faied to run Solibri on port {port}, try the next one...")
+            
+        # Open the needed SMC File
+        solibri_url = f"http://localhost:{port}/solibri/v1"
+        smc_file_path = "H:/Solibri/Model/Column-Window_AC20-FZK-Haus.smc"
+
+        # check if there is already model opened
+        check_project_url = f"{solibri_url}/model"
+        response = requests.get(check_project_url)
+        if response.status_code == 200:
+            print("Project opened, you need to close the current project first.")
+            close_project_url = f"{solibri_url}/model/close"
+            close_response = requests.post(close_project_url)
+            
+            if close_response.status_code == 200:
+                print("Current project closed, ready to open new project...")
+            else:
+                print(f"Failed to close the project: {close_response.status_code}, response: {close_response.text}")
+        else:
+            print("No opened project currently, open the new project directly")
+
+        # Open the given SMC model
+        open_project_url = f"{solibri_url}/project"
+        with open(smc_file_path, "rb") as smc_file:
+            headers = {"Content-Type": "application/octet-stream"}
+            response = requests.post(open_project_url, params={"name": "A.smc"}, headers=headers, data=smc_file)
+
+        if response.status_code == 201:
+            print("Successfully open the project!")
+            print("Project Info:", json.loads(response.text))
+        else:
+            print(f"Failed to open the project: {response.status_code}, response: {response.text}")
+
+        time.sleep(30) 
+
 eval_env = Monitor(env)
 timestamp = int(time.time())
-save_path = f"./databank/{timestamp}/"
+save_path = f"./TrainingData/{timestamp}/"
 eval_callback = EvalCallback(eval_env, best_model_save_path=save_path+ "eval/",
                             log_path=save_path + "eval/",
-                            eval_freq=64, n_eval_episodes=2,
+                            eval_freq=128, n_eval_episodes=4,
                             deterministic=True, render=False)
-checkpoint_callback = CheckpointCallback(save_freq=64, save_path=save_path + "checkpoint/", name_prefix="rl_model")
+checkpoint_callback = CheckpointCallback(save_freq=128, save_path=save_path + "checkpoint/", name_prefix="rl_model")
 custom_callback = CustomCallback(save_path)
 callback = [eval_callback, checkpoint_callback, custom_callback]
 # choose one algorithm
-model = DQN("MlpPolicy", env, batch_size=128,buffer_size=2048,gamma=0.99,learning_starts=128,learning_rate=0.00063,target_update_interval=64,train_freq=4,gradient_steps=-1,exploration_fraction=0.5, exploration_final_eps=0.1,verbose=1, tensorboard_log=save_path + "dqn_tensorboard/", device="auto")
-model = PPO("MlpPolicy", env, learning_rate=0.0005, n_steps=64, batch_size=64, n_epochs=4, verbose=1, tensorboard_log=save_path + "tensorboard/", device="cpu")
-# for continue the training, choose one model
-# previous_model_path = "./databank/final_model.zip"
-# model = DQN.load(previous_model_path, env=env)
-# model = PPO.load(previous_model_path, env=env)
-model.learn(total_timesteps=1024, callback=callback, progress_bar=True)
+# model = DQN("MlpPolicy", env, batch_size=128,buffer_size=2048,gamma=0.99,learning_starts=128,learning_rate=0.00063,target_update_interval=64,train_freq=4,gradient_steps=-1,exploration_fraction=0.5, exploration_final_eps=0.1,verbose=1, tensorboard_log=save_path + "dqn_tensorboard/", device="auto")
+model = PPO("MlpPolicy", env, learning_rate=0.0005, n_steps=128, batch_size=128, n_epochs=4, verbose=1, tensorboard_log=save_path + "tensorboard/", device="cpu")
+model.learn(total_timesteps=16348, callback=callback, progress_bar=True)
 model.save(save_path + "final_model/")
 env.close()
-
-# for testing the model
-env = GymEnv_IFC_AirTerminal()
-observation, info = env.reset()
-test_model_path = "./databank/final_model.zip"
-model = PPO.load(test_model_path, env=env)
-terminated = False
-while not terminated:
-    action, _states = model.predict(observation)
-    action = int(action)
-    observation, reward, terminated, truncated, info = env.step(action)
-    print("action:", action)
-    print("observation:", observation)
-    print("reward:", reward)
-else:
-    env.close()
