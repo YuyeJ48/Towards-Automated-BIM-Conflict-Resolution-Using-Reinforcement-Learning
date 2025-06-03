@@ -544,9 +544,78 @@ class CustomCallback(BaseCallback): #
                 self.restart_solibri()
                 self.need_restart = False
                 self.steps = 0
-                
         return True
+	    
+    def restart_solibri(self): #restart Solibri
+        print("Attempting to shut down Solibri...")
 
+        try:
+            response = requests.post('http://localhost:10876/solibri/v1/shutdown', params={"force": "true"})
+            if response.status_code == 200:
+                print("Solibri has been successfully shut down.")
+            else:
+                print(f"Failed to shut down Solibri. Status code: {response.status_code}, response: {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error shutting down Solibri: {e}")
+
+        time.sleep(30)
+
+        # reopen Solibri
+        print("Restarting Solibri...")
+        port_list = [10876, 8080, 8081, 8090, 8100, 8200, 8300, 8500, 8600, 8700, 8800, 8888, 8900, 9000, 9090, 10000]
+
+        for port in port_list:
+            command = [
+                r"C:\Program Files\Solibri\SOLIBRI\Solibri.exe",
+                f"--rest-api-server-port={port}",
+                "--rest-api-server-local-content",
+                "--rest-api-server-http"
+            ]
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            print("Solibri has been restarted.")
+
+            time.sleep(30)
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("localhost", port)) == 0:
+                    print(f"Solibri is successfully running on the port {port}.")
+                    break
+                else:
+                    print(f"Faied to run Solibri on port {port}, try the next one...")
+            
+        # Open the needed SMC File
+        solibri_url = f"http://localhost:{port}/solibri/v1"
+        smc_file_path = "H:/Solibri/Model/Column-Window_AC20-FZK-Haus.smc"
+
+        # check if there is already model opened
+        check_project_url = f"{solibri_url}/model"
+        response = requests.get(check_project_url)
+        if response.status_code == 200:
+            print("Project opened, you need to close the current project first.")
+            close_project_url = f"{solibri_url}/model/close"
+            close_response = requests.post(close_project_url)
+            
+            if close_response.status_code == 200:
+                print("Current project closed, ready to open new project...")
+            else:
+                print(f"Failed to close the project: {close_response.status_code}, response: {close_response.text}")
+        else:
+            print("No opened project currently, open the new project directly")
+
+        # Open the given SMC model
+        open_project_url = f"{solibri_url}/project"
+        with open(smc_file_path, "rb") as smc_file:
+            headers = {"Content-Type": "application/octet-stream"}
+            response = requests.post(open_project_url, params={"name": "A.smc"}, headers=headers, data=smc_file)
+
+        if response.status_code == 201:
+            print("Successfully open the project!")
+            print("Project Info:", json.loads(response.text))
+        else:
+            print(f"Failed to open the project: {response.status_code}, response: {response.text}")
+
+        time.sleep(30) 
+	    
 eval_env = Monitor(env)
 timestamp = int(time.time())
 save_path = f"./databank/{timestamp}/"
@@ -564,8 +633,8 @@ model.learn(total_timesteps=1024, callback=callback, progress_bar=True)
 model.save(save_path + "final_model/")
 env.close()
 
-#train with DQN
-model = DQN("MlpPolicy", env, batch_size=128,buffer_size=2048,gamma=0.99,learning_starts=128,learning_rate=0.00063,target_update_interval=64,train_freq=4,gradient_steps=-1,exploration_fraction=0.5, exploration_final_eps=0.1,verbose=1, tensorboard_log=save_path + "dqn_tensorboard/", device="auto")
-model.learn(total_timesteps=1024, callback=callback, progress_bar=True)
-model.save(save_path + "final_model/")
-env.close()
+# #train with DQN
+# model = DQN("MlpPolicy", env, batch_size=128,buffer_size=2048,gamma=0.99,learning_starts=128,learning_rate=0.00063,target_update_interval=64,train_freq=4,gradient_steps=-1,exploration_fraction=0.5, exploration_final_eps=0.1,verbose=1, tensorboard_log=save_path + "dqn_tensorboard/", device="auto")
+# model.learn(total_timesteps=1024, callback=callback, progress_bar=True)
+# model.save(save_path + "final_model/")
+# env.close()
