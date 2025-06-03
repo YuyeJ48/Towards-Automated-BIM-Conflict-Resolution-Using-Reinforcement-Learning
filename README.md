@@ -1,6 +1,6 @@
-# Automated BIM Conflict Resolution Using RL
+# Towards Automated BIM Conflict Resolution Using RL
 
-This code combines Gym-based RL environment and Solibri APIs to train an agent in real BIM environment to solve conflicts in IFC model. The PPO algorithm is the main focus, but DQN is also included, both algorithms are employed from the Stable-Baselines3.
+This code base contains implementation of the paper: [Towards Automated BIM Conflict Resolution Using Reinforcement Learning](https://mediatum.ub.tum.de/doc/1781883/1781883.pdf) This paper combines Gym-based RL environment and Solibri APIs to train an agent in real BIM environment to solve conflicts in IFC model. The PPO algorithm is the main focus, but DQN is also included, both algorithms are employed from the Stable-Baselines3.
 
 ## Installation
 
@@ -27,26 +27,10 @@ Please note:
 After the successful installtion, lauch the Solibri software. If the installation is successful, a _CHECKING EXPORTER_ should appear in _VIEWS_ tab. Click it and a window will pop up with the _Export automatically_ option selected. 
 ### 2. Install Python libraries.
 
-manager [pip](https://pip.pypa.io/en/stable/) to install all the necessary libraries, including [Gym framework](https://gymnasium.farama.org/), [IFcOpenSell](https://ifcopenshell.org/), [Stable-Baselines3](https://ifcopenshell.org/) and so on.
+Use conda to install all the necessary libraries, including [Gym framework](https://gymnasium.farama.org/), [IFcOpenSell](https://ifcopenshell.org/), [Stable-Baselines3](https://ifcopenshell.org/) and so on.
 
 ```bash
-pip install csv
-pip install os
-pip install sys
-pip install shutil
-pip install numpy
-pip install requests
-pip install pandas
-
-pip install gymnasium
-
-pip install ifcopenshell
-pip install ifcopenshell.api
-pip install ifcopenshell.geom
-pip install ifcopenshell.util
-
-pip install stable_baselines3
-pip install stable_baselines3.common
+conda env create -f env.yml
 ```
 *Please install the v0.7.0-6c9e130ca version of ifcopenshell
 
@@ -121,3 +105,25 @@ env.close()
 3. If possible, you can try to tune the hyperparameters, especially the learning_rate(maybe try 0.0005 or 0.001), to see if it improves the results.
 
 *All training data will be saved in a folder named _databank_ in the same location of the main code, including final model, best performance model, model after different intervals alongside with different training and evaluation data.
+
+### TODO
+- We adopted a strategy of restarting Solibri every 256 steps to reduce its memory consumption and speed up training. This strategy was effective in the early stages of training, but as the number of restarts increased, Solibri checks became very slow.
+- In `Toilet-Wall\Toilet-Wall_RL_Code_250317.py`, we explored 
+	1. using a smaller observation space
+	2. relative normalized coordinates
+	3. introducing intermediate rewards
+	4. optimizing the reward logic
+	5. changing the network dimension of the policy MLP
+	6. reducing the randomness of the initialization position
+
+	The goal is to accelerate the convergence speed of training. However, the memory usage of Solibri increase significantly with the number of training steps, making training still very inefficient.
+
+## Citation
+```
+@inproceedings{Jiang:2025:RL4BIMConflict,
+	author = {Jiang, Y. and Du, C. and Wu, J. and Nousias, S. and Borrmann, A.},
+	title = {Towards Automated BIM Conflict Resolution Using Reinforcement Learning},
+	booktitle = {Proc. of the 32nd Int. Workshop on Intelligent Computing in Engineering (EG-ICE)},
+	year = {2025}
+}
+```
